@@ -1,0 +1,59 @@
+# Document Understanding Buddy -- MySQL 8 + FastAPI backend + React frontend.
+#
+#   cp .env.example .env      # then set GEMINI_API_KEY
+#   docker compose up --build
+#
+# UI: http://localhost:8080   API docs: http://localhost:8000/docs
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: doc_buddy
+      MYSQL_USER: doc_buddy
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-doc_buddy}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-001}
+      DATABASE_URL: mysql+asyncmy://doc_buddy:${MYSQL_PASSWORD:-doc_buddy}@mysql:3306/doc_buddy
+      CHROMA_PERSIST_DIR: /app/data/chroma
+      UPLOAD_DIR: /app/data/uploads
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend-data:/app/data
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  mysql-data:
+  backend-data:
